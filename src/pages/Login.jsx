@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { login, saveToken } from '../services/auth';
 import { useNavigate, Link } from 'react-router-dom';
+import { Form, Button, Card, Alert, Spinner } from 'react-bootstrap';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -15,7 +16,6 @@ export default function Login() {
     setLoading(true);
     try {
       const data = await login(email, password);
-      // server returns { token: "..."} or message string in signup
       const token = data?.token;
       if (!token) throw new Error('Invalid server response');
       saveToken(token);
@@ -28,28 +28,62 @@ export default function Login() {
   }
 
   return (
-    <div className="container">
-      <div style={{ maxWidth:480, margin:'24px auto' }}>
-        <div className="card">
-          <h2>Welcome back</h2>
-          <p className="small-muted">Sign in to access your learning paths</p>
-          <form onSubmit={handleSubmit} style={{ marginTop:12 }}>
-            <div className="form-row">
-              <input placeholder="Email" className="input" value={email} onChange={e=>setEmail(e.target.value)} />
-            </div>
-            <div className="form-row">
-              <input placeholder="Password" type="password" className="input" value={password} onChange={e=>setPassword(e.target.value)} />
-            </div>
+    <div className="d-flex align-items-center justify-content-center vh-100 bg-dark text-light">
+      <Card
+        className="shadow-lg p-4"
+        style={{ maxWidth: '420px', width: '100%', backgroundColor: '#0b1220' }}
+      >
+        <Card.Body>
+          <div className="text-center mb-4">
+            <h2 className="fw-bold text-info">Welcome Back</h2>
+            <p className="text-secondary">Sign in to access your learning paths</p>
+          </div>
 
-            {err && <div className="alert" style={{ marginBottom:10 }}>{err}</div>}
+          {err && <Alert variant="danger">{err}</Alert>}
 
-            <div style={{ display:'flex', gap:8 }}>
-              <button className="btn" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>
-              <Link to="/signup" className="btn ghost">Create account</Link>
+          <Form onSubmit={handleSubmit}>
+            <Form.Group controlId="formEmail" className="mb-3">
+              <Form.Label className="text-light">Email</Form.Label>
+              <Form.Control
+                type="email"
+                placeholder="Enter email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                className="bg-dark text-light border-secondary"
+              />
+            </Form.Group>
+
+            <Form.Group controlId="formPassword" className="mb-4">
+              <Form.Label className="text-light">Password</Form.Label>
+              <Form.Control
+                type="password"
+                placeholder="Enter password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                className="bg-dark text-light border-secondary"
+              />
+            </Form.Group>
+
+            <div className="d-grid gap-2">
+              <Button variant="info" type="submit" disabled={loading} className="fw-semibold">
+                {loading ? (
+                  <>
+                    <Spinner animation="border" size="sm" className="me-2" /> Signing in...
+                  </>
+                ) : (
+                  'Sign in'
+                )}
+              </Button>
+
+              <Link to="/signup" className="btn btn-outline-light fw-semibold">
+                Create Account
+              </Link>
             </div>
-          </form>
-        </div>
-      </div>
+          </Form>
+        </Card.Body>
+      </Card>
     </div>
   );
 }

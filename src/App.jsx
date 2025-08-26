@@ -6,6 +6,10 @@ import Dashboard from './pages/Dashboard';
 import CreatePath from './pages/CreatePath';
 import PathDetails from './pages/PathDetails';
 import ProtectedRoute from './components/ProtectedRoute';
+import ChatTutor from './pages/ChatTutor';
+import InterviewSimulator from './pages/InterviewSimulator';
+import ResumeAnalyzer from './pages/ResumeAnalyzer';
+import Flashcards from './pages/FlashCards';
 
 export default function App() {
   return (
@@ -32,6 +36,12 @@ export default function App() {
       } />
 
       <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/chat" element={<ProtectedRoute><ChatTutor/></ProtectedRoute>} />
+      <Route path="/interview" element={<ProtectedRoute><InterviewSimulator/></ProtectedRoute>} />
+      <Route path="/resume" element={<ProtectedRoute><ResumeAnalyzer/></ProtectedRoute>} />
+      <Route path="/flashcards" element={<ProtectedRoute><Flashcards/></ProtectedRoute>} />
+
+
     </Routes>
   );
 }

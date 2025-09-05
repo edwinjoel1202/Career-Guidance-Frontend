@@ -39,6 +39,9 @@ import parseISO from "date-fns/parseISO";
 import enUS from "date-fns/locale/en-US";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 const locales = { "en-US": enUS };
 const localizer = dateFnsLocalizer({
   format,
@@ -158,6 +161,7 @@ export default function PathDetails() {
   }
 
   async function toggleComplete(idx) {
+    // kept for backward-compatibility but UI no longer exposes a manual mark-complete button
     if (!pathData) return;
     const copy = JSON.parse(JSON.stringify(pathData));
     copy.path[idx].status =
@@ -178,8 +182,16 @@ export default function PathDetails() {
     setGeneratingAssess((prev) => [...prev, idx]);
     setErr("");
     try {
+      // backend expects (pathId, topicIndex) in your current service; preserve that call
       const qs = await generateAssessment(pathData.id, idx);
-      setQuestions(qs || []);
+      // try to normalize response to array of questions
+      let questionsArr = [];
+      if (Array.isArray(qs)) questionsArr = qs;
+      else if (qs?.assessment) questionsArr = qs.assessment;
+      else if (qs?.result && Array.isArray(qs.result)) questionsArr = qs.result;
+      else if (qs?.questions && Array.isArray(qs.questions)) questionsArr = qs.questions;
+      else questionsArr = qs || [];
+      setQuestions(questionsArr || []);
       setAnswers({});
       setAssessOpen(true);
     } catch (e) {
@@ -206,10 +218,12 @@ export default function PathDetails() {
           userAnswer: answers[i] || "",
         })),
       };
+      // evaluateAssessment(pathId, topicIndex, payload) - keeping existing service signature
       const updated = await evaluateAssessment(pathData.id, selectedIndex, payload);
       updated.path.sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
       setPathData(updated);
       setAssessOpen(false);
+      setAnswers({});
     } catch (e) {
       setErr(e?.response?.data?.error || e?.message || "Evaluation failed");
     } finally {
@@ -726,9 +740,7 @@ export default function PathDetails() {
                       </div>
 
                       <div className="d-flex flex-column align-items-end ms-2">
-                        <Button variant="outline-secondary" size="sm" onClick={(e) => { e.stopPropagation(); toggleComplete(i); }}>
-                          {it.status === "completed" ? "Undo" : "Done"}
-                        </Button>
+                        {/* Removed manual Done/Undo button per requirement (progress is assessment-driven) */}
 
                         <Button variant="link" size="sm" className="text-muted" onClick={(e) => { e.stopPropagation(); handleGenerateAssessment(i); }} disabled={generatingAssess.includes(i)}>
                           {generatingAssess.includes(i) ? <Spinner animation="border" size="sm" /> : "Generate Quiz"}
@@ -789,34 +801,52 @@ export default function PathDetails() {
                     </Dropdown.Menu>
                   </Dropdown>
 
-                  <Button variant={current?.status === "completed" ? "outline-secondary" : "success"} onClick={() => toggleComplete(selectedIndex)}>
-                    {current?.status === "completed" ? "Mark Pending" : "Mark Completed"}
-                  </Button>
+                  {/* Manual mark-complete removed from UI per requirement */}
                 </div>
 
-                {/* Last assessment result */}
+                {/* Topic content if present */}
+                {current?.content && (
+                  <div className="mb-3">
+                    <h6>Content</h6>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} children={current.content} />
+                  </div>
+                )}
+
+                {/* Last assessment / evaluation area */}
                 <div className="mb-3">
                   <h6 className="mb-2">Last assessment</h6>
                   {current?.assessmentResult ? (() => {
                     const ar = parseAssessmentResult(current);
                     if (!ar) return <div className="text-muted small">Result stored but could not parse.</div>;
+
+                    const score = typeof ar.score === "number" ? ar.score : (ar.score ?? 0);
+                    const outOf = ar.outOf ?? (Array.isArray(ar.evaluation) ? ar.evaluation.length : 0);
+                    const pct = outOf ? Math.round((score / outOf) * 100) : (typeof score === 'number' ? score : 0);
+                    const passed = ar?.passed ?? (outOf >= 10 ? score >= 7 : pct >= 70);
+
                     return (
                       <div>
-                        <div className="d-flex justify-content-between align-items-center">
-                          <div><strong>Score:</strong> {ar.score ?? ar?.score === 0 ? `${ar.score}%` : '—'}</div>
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                          <div className="fw-semibold">Score: {score}/{outOf || "?"}</div>
                           <div className="small text-muted">Evaluated: {ar?.evaluatedAt ? prettyDate(ar.evaluatedAt) : '—'}</div>
                         </div>
+                        <div className="d-flex align-items-center gap-3 mb-3">
+                          <div style={{ width: 220 }}>
+                            <ProgressBar now={pct} label={`${pct}%`} />
+                          </div>
+                          {passed ? <Badge bg="success">Passed</Badge> : <Badge bg="danger">Failed</Badge>}
+                        </div>
 
-                        <Table size="sm" className="mt-2">
+                        <Table size="sm" className="mt-2" bordered>
                           <thead>
                             <tr><th>#</th><th>Question</th><th>Your</th><th>Correct</th><th>OK</th></tr>
                           </thead>
                           <tbody>
                             {(ar.evaluation || ar.evaluations || []).map((q, i) => (
                               <tr key={i}>
-                                <td>{i+1}</td>
-                                <td style={{ maxWidth: 360 }}>{q.question}</td>
-                                <td>{q.userAnswer ?? q.selected ?? ''}</td>
+                                <td style={{ width: 30 }}>{i+1}</td>
+                                <td style={{ maxWidth: 360, whiteSpace: 'pre-wrap' }}><ReactMarkdown remarkPlugins={[remarkGfm]} children={q.question || q.prompt || q.text || ''} /></td>
+                                <td style={{ whiteSpace: 'pre-wrap' }}>{q.userAnswer ?? q.selected ?? ''}</td>
                                 <td>{q.correctAnswer ?? q.answer ?? ''}</td>
                                 <td>{q.isCorrect ? <Badge bg="success">✓</Badge> : <Badge bg="danger">✕</Badge>}</td>
                               </tr>
@@ -825,7 +855,35 @@ export default function PathDetails() {
                         </Table>
                       </div>
                     );
-                  })() : <div className="text-muted small">No assessment taken yet for this topic.</div>}
+                  })() : current?.assessmentJson ? (() => {
+                    // show generated assessment (not yet evaluated)
+                    let parsed;
+                    try {
+                      parsed = typeof current.assessmentJson === 'string' ? JSON.parse(current.assessmentJson) : current.assessmentJson;
+                    } catch (e) {
+                      parsed = current.assessmentJson;
+                    }
+                    const qarr = parsed?.questions || parsed || [];
+                    return (
+                      <div>
+                        <div className="small text-muted mb-2">Stored generated assessment:</div>
+                        <ListGroup>
+                          {qarr.map((q, i) => (
+                            <ListGroup.Item key={i}>
+                              <div><strong>Q{i + 1}:</strong> <ReactMarkdown remarkPlugins={[remarkGfm]} children={q.question || q.prompt || q.text || JSON.stringify(q)} /></div>
+                              {q.options && (
+                                <div className="small mt-2">
+                                  {Object.entries(q.options).map(([k, v]) => <div key={k}><strong>{k}:</strong> <ReactMarkdown remarkPlugins={[remarkGfm]} children={v} /></div>)}
+                                </div>
+                              )}
+                            </ListGroup.Item>
+                          ))}
+                        </ListGroup>
+                      </div>
+                    );
+                  })() : (
+                    <div className="text-muted small">No assessment taken yet for this topic.</div>
+                  )}
                 </div>
 
               </Card.Body>
@@ -879,7 +937,7 @@ export default function PathDetails() {
             <Form>
               {questions.map((q, i) => (
                 <div key={i} className="mb-3">
-                  <div className="fw-semibold">{i + 1}. {q.question}</div>
+                  <div className="fw-semibold">{i + 1}. <ReactMarkdown remarkPlugins={[remarkGfm]} children={q.question || q.prompt || q.text || ''} /></div>
                   <div className="mt-2 d-flex gap-2 flex-column">
                     {Object.entries(q.options || {}).map(([optKey, optText]) => (
                       <Form.Check
@@ -887,7 +945,7 @@ export default function PathDetails() {
                         type="radio"
                         id={`q${i}_${optKey}`}
                         name={`q${i}`}
-                        label={`${optKey}. ${optText}`}
+                        label={<ReactMarkdown remarkPlugins={[remarkGfm]} children={`${optKey}. ${optText}`} />}
                         checked={answers[i] === optKey}
                         onChange={() => setAnswers(prev => ({ ...prev, [i]: optKey }))}
                       />
@@ -913,7 +971,7 @@ export default function PathDetails() {
           <Modal.Title>AI Explanation — {current?.topic}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {explainLoading ? <Spinner animation="border" /> : <div style={{ whiteSpace: 'pre-wrap' }}>{explainText || 'No explanation.'}</div>}
+          {explainLoading ? <Spinner animation="border" /> : <ReactMarkdown remarkPlugins={[remarkGfm]} children={explainText || 'No explanation.'} />}
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setExplainOpen(false)}>Close</Button>
@@ -934,7 +992,7 @@ export default function PathDetails() {
                     <div>
                       <div className="fw-semibold">{r.title}</div>
                       <small className="text-muted">{r.type}</small>
-                      <div className="small">{r.description}</div>
+                      <div className="small"><ReactMarkdown remarkPlugins={[remarkGfm]} children={r.description || ''} /></div>
                     </div>
                     <div>
                       {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-info">Open</a>}
